@@ -1,0 +1,27 @@
+# Build outputs
+*.xcframework
+*.zip
+*.zip.sha256
+build/
+derived-data/
+
+# Realm source checkout
+realm-swift/
+
+# Temporary files
+*.tmp
+*.log
+.DS_Store
+
+# Environment files with secrets (if any)
+config/*.local
+.env
+
+# Xcode
+*.xcuserstate
+*.xcworkspace/xcuserdata
+*.xcodeproj/xcuserdata/
+
+# macOS
+.Spotlight-V100
+.Trashes
