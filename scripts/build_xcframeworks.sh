@@ -90,8 +90,8 @@ sh build.sh xcframework ios tvos
 
 # Copy XCFrameworks to output directory
 echo "Copying XCFrameworks to output directory..."
-cp -R build/xcframework/Realm.xcframework "$PROJECT_ROOT/$OUTPUT_DIR/"
-cp -R build/xcframework/RealmSwift.xcframework "$PROJECT_ROOT/$OUTPUT_DIR/"
+cp -R build/Release/Realm.xcframework "$PROJECT_ROOT/$OUTPUT_DIR/"
+cp -R build/Release/RealmSwift.xcframework "$PROJECT_ROOT/$OUTPUT_DIR/"
 
 echo ""
 echo "=== Build Complete ==="
