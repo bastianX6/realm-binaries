@@ -41,9 +41,27 @@ echo ""
 if [ -d "$REALM_SOURCE_DIR" ]; then
     echo "Updating existing Realm source checkout..."
     cd "$REALM_SOURCE_DIR"
-    git fetch origin
-    git checkout "$REALM_SOURCE_TAG"
-    git pull origin "$REALM_SOURCE_TAG"
+    # Check if this is a proper git repo with origin remote
+    if git remote get-url origin >/dev/null 2>&1; then
+        git fetch origin
+        git checkout "$REALM_SOURCE_TAG"
+        git pull origin "$REALM_SOURCE_TAG"
+    else
+        # Re-download if this is an archive-imported repo without origin
+        echo "Re-downloading Realm source archive (no git remote)..."
+        cd "$PROJECT_ROOT"
+        rm -rf "$REALM_SOURCE_DIR"
+        ARCHIVE_URL="${REALM_SOURCE_REPO%.git}/archive/refs/tags/${REALM_SOURCE_TAG}.tar.gz"
+        curl -L "$ARCHIVE_URL" -o "${REALM_SOURCE_TAG}.tar.gz"
+        mkdir -p "$REALM_SOURCE_DIR"
+        tar -xzf "${REALM_SOURCE_TAG}.tar.gz" --strip-components=1 -C "$REALM_SOURCE_DIR"
+        rm "${REALM_SOURCE_TAG}.tar.gz"
+        cd "$REALM_SOURCE_DIR"
+        git init
+        git add -A
+        git commit -m "Import from ${REALM_SOURCE_TAG}"
+        git tag "$REALM_SOURCE_TAG"
+    fi
 else
     echo "Downloading Realm source archive..."
     ARCHIVE_URL="${REALM_SOURCE_REPO%.git}/archive/refs/tags/${REALM_SOURCE_TAG}.tar.gz"
@@ -65,7 +83,7 @@ echo ""
 
 # Build XCFrameworks
 echo "Building Realm XCFrameworks for iOS and tvOS..."
-cd "$REALM_SOURCE_DIR"
+# Already in REALM_SOURCE_DIR from above
 
 # Use Realm's official build script
 sh build.sh xcframework ios tvos
