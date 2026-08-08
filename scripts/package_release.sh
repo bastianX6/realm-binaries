@@ -97,10 +97,14 @@ echo "Creating archive: $ARCHIVE_NAME"
 cd "$OUTPUT_DIR"
 zip -r "$RELEASE_DIR/$ARCHIVE_NAME" \
     Realm.xcframework \
-    RealmSwift.xcframework \
-    ../release/manifest.json
+    RealmSwift.xcframework
 
 cd "$PROJECT_ROOT"
+
+# Add manifest to archive
+echo "Adding manifest to archive..."
+cd "$RELEASE_DIR"
+zip -u "$ARCHIVE_NAME" manifest.json
 
 # Generate SHA256 checksum
 echo "Generating SHA256 checksum..."

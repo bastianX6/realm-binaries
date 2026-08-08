@@ -37,7 +37,7 @@ echo "Source Tag: $REALM_SOURCE_TAG"
 echo "Output Directory: $OUTPUT_DIR"
 echo ""
 
-# Checkout Realm source
+# Download Realm source archive (faster than git clone)
 if [ -d "$REALM_SOURCE_DIR" ]; then
     echo "Updating existing Realm source checkout..."
     cd "$REALM_SOURCE_DIR"
@@ -45,9 +45,17 @@ if [ -d "$REALM_SOURCE_DIR" ]; then
     git checkout "$REALM_SOURCE_TAG"
     git pull origin "$REALM_SOURCE_TAG"
 else
-    echo "Cloning Realm source..."
-    git clone --depth 1 --branch "$REALM_SOURCE_TAG" "$REALM_SOURCE_REPO" "$REALM_SOURCE_DIR"
+    echo "Downloading Realm source archive..."
+    ARCHIVE_URL="${REALM_SOURCE_REPO%.git}/archive/refs/tags/${REALM_SOURCE_TAG}.tar.gz"
+    curl -L "$ARCHIVE_URL" -o "${REALM_SOURCE_TAG}.tar.gz"
+    mkdir -p "$REALM_SOURCE_DIR"
+    tar -xzf "${REALM_SOURCE_TAG}.tar.gz" --strip-components=1 -C "$REALM_SOURCE_DIR"
+    rm "${REALM_SOURCE_TAG}.tar.gz"
     cd "$REALM_SOURCE_DIR"
+    git init
+    git add -A
+    git commit -m "Import from ${REALM_SOURCE_TAG}"
+    git tag "$REALM_SOURCE_TAG"
 fi
 
 # Verify source version
