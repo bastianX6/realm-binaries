@@ -86,10 +86,17 @@ echo "Building Realm XCFrameworks for iOS and tvOS..."
 # Already in REALM_SOURCE_DIR from above
 
 # Use Realm's official build script
-sh build.sh xcframework ios tvos
+if ! command -v xcbeautify >/dev/null 2>&1; then
+    echo "Error: xcbeautify is required to format build output" >&2
+    exit 1
+fi
+
+rm -rf build/Release/Realm.xcframework build/Release/RealmSwift.xcframework
+sh build.sh xcframework ios tvos 2>&1 | xcbeautify
 
 # Copy XCFrameworks to output directory
 echo "Copying XCFrameworks to output directory..."
+rm -rf "$PROJECT_ROOT/$OUTPUT_DIR/Realm.xcframework" "$PROJECT_ROOT/$OUTPUT_DIR/RealmSwift.xcframework"
 cp -R build/Release/Realm.xcframework "$PROJECT_ROOT/$OUTPUT_DIR/"
 cp -R build/Release/RealmSwift.xcframework "$PROJECT_ROOT/$OUTPUT_DIR/"
 
