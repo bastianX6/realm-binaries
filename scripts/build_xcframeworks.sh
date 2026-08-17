@@ -93,6 +93,100 @@ echo "Copying XCFrameworks to output directory..."
 cp -R build/Release/Realm.xcframework "$PROJECT_ROOT/$OUTPUT_DIR/"
 cp -R build/Release/RealmSwift.xcframework "$PROJECT_ROOT/$OUTPUT_DIR/"
 
+# Do not start signing until the copied XCFrameworks have reached a stable
+# on-disk state.  The Realm build script normally runs synchronously, but this
+# guard also protects against delayed filesystem work (or a future build-script
+# change that leaves a child job running) modifying a slice after signing has
+# started.  Two identical inventories, separated by a short delay, establish
+# that no file is still being written.
+wait_for_xcframework_stability() {
+    local xcframework_path="$1"
+    local before after
+
+    while true; do
+        before=$(find "$xcframework_path" -type f -exec stat -f '%N %z %m' {} + | LC_ALL=C sort)
+        sleep 1
+        after=$(find "$xcframework_path" -type f -exec stat -f '%N %z %m' {} + | LC_ALL=C sort)
+        if [ "$before" = "$after" ]; then
+            return 0
+        fi
+        echo "Waiting for $xcframework_path to become stable..."
+    done
+}
+
+wait_for_xcframework_stability "$PROJECT_ROOT/$OUTPUT_DIR/Realm.xcframework"
+wait_for_xcframework_stability "$PROJECT_ROOT/$OUTPUT_DIR/RealmSwift.xcframework"
+
+# Sign every framework slice and then the enclosing XCFramework. Apple expects
+# both layers to be signed for the SDK-origin signature receipt.
+sign_xcframework_two_layer() {
+    local xcframework_path="$1"
+    local name
+    name=$(basename "$xcframework_path" .xcframework)
+    local identity="${REALM_SIGNING_IDENTITY:-}"
+
+    if ! command -v codesign >/dev/null 2>&1; then
+        echo "Error: codesign is required to sign $name.xcframework" >&2
+        return 1
+    fi
+
+    if [ -z "$identity" ]; then
+        identity=$(security find-identity -v -p codesigning 2>/dev/null \
+            | awk -F '"' '/"Apple Distribution:|"iPhone Distribution:/ { print $2; exit }')
+    fi
+
+    if [ -z "$identity" ]; then
+        echo "Error: no Apple Distribution signing identity found for $name.xcframework" >&2
+        echo "Set REALM_SIGNING_IDENTITY to an installed Apple distribution identity." >&2
+        return 1
+    fi
+
+    case "$identity" in
+        "Apple Distribution:"*|"iPhone Distribution:"*)
+            ;;
+        *)
+            echo "Error: signing identity is not an Apple distribution identity: $identity" >&2
+            return 1
+            ;;
+    esac
+
+    if ! security find-identity -v -p codesigning 2>/dev/null \
+        | awk -F '"' -v expected="$identity" '$2 == expected { found=1 } END { exit !found }'; then
+        echo "Error: selected signing identity is not installed: $identity" >&2
+        return 1
+    fi
+
+    local framework_path
+    local framework_count=0
+    while IFS= read -r -d '' framework_path; do
+        framework_count=$((framework_count + 1))
+        codesign --timestamp --force -s "$identity" "$framework_path" || {
+            echo "Error: failed to sign framework slice: $framework_path" >&2
+            return 1
+        }
+    done < <(find "$xcframework_path" -type d -name '*.framework' -print0)
+
+    if [ "$framework_count" -eq 0 ]; then
+        echo "Error: no framework slices found in $xcframework_path" >&2
+        return 1
+    fi
+
+    # This must remain after all inner framework signatures are complete.
+    codesign --timestamp --force -s "$identity" "$xcframework_path" || {
+        echo "Error: failed to sign enclosing XCFramework: $xcframework_path" >&2
+        return 1
+    }
+
+    codesign -dvvv "$xcframework_path" >/dev/null 2>&1 || {
+        echo "Error: enclosing XCFramework signature verification failed: $xcframework_path" >&2
+        return 1
+    }
+    echo "Signed $name.xcframework and $framework_count framework slice(s) with: $identity"
+}
+
+sign_xcframework_two_layer "$PROJECT_ROOT/$OUTPUT_DIR/Realm.xcframework"
+sign_xcframework_two_layer "$PROJECT_ROOT/$OUTPUT_DIR/RealmSwift.xcframework"
+
 echo ""
 echo "=== Build Complete ==="
 echo "XCFrameworks available in: $OUTPUT_DIR"
