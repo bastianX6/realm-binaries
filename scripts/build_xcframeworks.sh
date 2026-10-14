@@ -163,11 +163,24 @@ sign_xcframework_two_layer() {
         return 1
     fi
 
+    # codesign can fail to resolve identity names containing non-ASCII
+    # characters (e.g. accented names), even though security find-identity
+    # lists them. Sign with the certificate SHA-1 hash, which codesign
+    # resolves unambiguously in the keychain.
+    local signing_ref="$identity"
+    local identity_hash
+    identity_hash=$(security find-identity -v -p codesigning 2>/dev/null \
+        | awk -F '"' -v expected="$identity" '$2 == expected { print $1 }' \
+        | grep -oE '[0-9A-Fa-f]{40}' | head -1)
+    if [ -n "$identity_hash" ]; then
+        signing_ref="$identity_hash"
+    fi
+
     local framework_path
     local framework_count=0
     while IFS= read -r -d '' framework_path; do
         framework_count=$((framework_count + 1))
-        codesign --timestamp --force -s "$identity" "$framework_path" || {
+        codesign --timestamp --force -s "$signing_ref" "$framework_path" || {
             echo "Error: failed to sign framework slice: $framework_path" >&2
             return 1
         }
@@ -179,7 +192,7 @@ sign_xcframework_two_layer() {
     fi
 
     # This must remain after all inner framework signatures are complete.
-    codesign --timestamp --force -s "$identity" "$xcframework_path" || {
+    codesign --timestamp --force -s "$signing_ref" "$xcframework_path" || {
         echo "Error: failed to sign enclosing XCFramework: $xcframework_path" >&2
         return 1
     }

@@ -19,6 +19,8 @@ fi
 : "${REALM_VERSION:?REALM_VERSION not set}"
 : "${XCODE_VERSION:?XCODE_VERSION not set}"
 : "${REVISION:?REVISION not set}"
+: "${REALM_SOURCE_REPO:?REALM_SOURCE_REPO not set}"
+: "${REALM_SOURCE_TAG:?REALM_SOURCE_TAG not set}"
 
 # Generate tag and archive name
 TAG="realm-${REALM_VERSION}-xcode-${XCODE_VERSION}-r${REVISION}"
@@ -50,21 +52,29 @@ if [ ! -d "$OUTPUT_DIR/RealmSwift.xcframework" ]; then
     exit 1
 fi
 
-# Get Realm source commit
-if [ -d "realm-swift" ]; then
-    cd realm-swift
-    REALM_COMMIT=$(git rev-parse HEAD)
-    REALM_TAG=$(git describe --tags --exact-match 2>/dev/null || echo "none")
-    cd "$PROJECT_ROOT"
-else
-    REALM_COMMIT="unknown"
-    REALM_TAG="unknown"
+# Resolve the configured source tag against the official remote. Local archive
+# imports have synthetic commits, so HEAD is not reliable source provenance.
+REALM_TAG="$REALM_SOURCE_TAG"
+REALM_COMMIT=$(git ls-remote "$REALM_SOURCE_REPO" "refs/tags/$REALM_TAG^{}" "refs/tags/$REALM_TAG" \
+    | awk -v tag="refs/tags/$REALM_TAG" '$2 == tag "^{}" { peeled=$1 } $2 == tag { direct=$1 } END { if (peeled != "") print peeled; else print direct }')
+if [ -z "$REALM_COMMIT" ] || ! [[ "$REALM_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]]; then
+    echo "Error: could not resolve $REALM_TAG to a commit at $REALM_SOURCE_REPO" >&2
+    exit 1
+fi
+if [ -n "${REALM_LOCAL_IMPORT_COMMIT:-}" ]; then
+    if ! [[ "$REALM_LOCAL_IMPORT_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]]; then
+        echo "Error: REALM_LOCAL_IMPORT_COMMIT must be a 40-character commit hash" >&2
+        exit 1
+    fi
+    REALM_COMMIT="$REALM_LOCAL_IMPORT_COMMIT"
 fi
 
 # Get Xcode version info
-XCODE_BUILD_VERSION=$(xcodebuild -version | head -1)
-XCODE_BUILD_NUMBER=$(xcodebuild -version | tail -1)
-SWIFT_VERSION=$(swift --version | head -1)
+XCODE_VERSION_OUTPUT=$(xcodebuild -version)
+XCODE_BUILD_VERSION=$(printf '%s\n' "$XCODE_VERSION_OUTPUT" | sed -n '1p')
+XCODE_BUILD_NUMBER=$(printf '%s\n' "$XCODE_VERSION_OUTPUT" | sed -n '2p')
+SWIFT_VERSION_OUTPUT=$(swift --version)
+SWIFT_VERSION=$(printf '%s\n' "$SWIFT_VERSION_OUTPUT" | sed -n '1p')
 
 # Create manifest
 cat > "$RELEASE_DIR/manifest.json" << EOF
